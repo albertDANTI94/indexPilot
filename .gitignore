@@ -1,0 +1,31 @@
+# IndexPilot - fichiers locaux / temporaires
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+
+# Fichiers de travail / patchs
+*.diff
+*.patch
+patchs/
+
+# Logs
+*.log
+error_log
+
+# Fichiers de debug temporaires
+debug_post.txt
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# IDE / éditeurs
+.vscode/
+.idea/
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*~
