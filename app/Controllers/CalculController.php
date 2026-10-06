@@ -3,75 +3,11 @@
 namespace App\Controllers;
 
 use App\Models\Calculs;
-use App\Models\Utilisateurs;
 use App\Models\CalculDTO;
+use App\Services\RevisionCalculator;
 
-class CalculController extends CoreController {
-    /*public function index() {
-        
-        $userId = $_SESSION["userId"] ?? null;
-
-        if (!$userId) {
-            die("Utilisateur non connecté");
-        }
-    
-        // ---------------- USER ----------------
-        $user = Utilisateurs::find($userId);
-        
-        $calculs = Calculs::getLibelleText($userId);
-        
-        foreach ($calculs as &$calcul) {
-
-            $indiceN0 = (float) $calcul['indice_n0'];
-            $indiceNn = (float) $calcul['indice_nn'];
-    
-            $calcul['variation'] = ($indiceN0 > 0)
-                ? (($indiceNn - $indiceN0) / $indiceN0) * 100
-                : 0;
-    
-            $calcul['impact'] =
-                (float)$calcul['nouveau_tarif']
-                - (float)$calcul['tarif_origin'];
-        }
-        
-       // $calculsData = [];
-        
-
-        foreach ($calculs as $calcul) {
-
-            $indiceN0 = (float) $calcul->getIndiceN0();
-            $indiceNn = (float) $calcul->getIndiceNn();
-        
-            $variation = ($indiceN0 > 0)
-                ? (($indiceNn - $indiceN0) / $indiceN0) * 100
-                : 0;
-        
-            $calculsData[] = [
-                'reference' => $calcul->getReference(),
-                'id' => $calcul->getId(),
-                'libelle' => $calcul->getLibelle(),
-                'partFerme' => $calcul->getPartFerme(),
-                'tarif' => (float)$calcul->getTarifOrigin(),
-                'indiceN0' => $indiceN0,
-                'indiceNn' => $indiceNn,
-                'nouveauTarif' => (float)$calcul->getNouveauTarif(),
-                'variation' => $variation,
-                'impact' =>
-                    $calcul->getNouveauTarif()
-                    - $calcul->getTarifOrigin(),
-                'date' => $calcul->getCreatedAt(),
-                'date0' => $calcul->getDate0(),
-                'dateN' => $calcul->getDateN(),
-            ];
-        }
-        
-        $this->show('calculs', [
-            'calculs' => $calculs,
-            //'calculsData' => $calculsData,
-            ]);
-        
-    }*/
-    
+class CalculController extends CoreController
+{
     public function index()
     {
         $userId = $_SESSION["userId"] ?? null;
@@ -79,34 +15,108 @@ class CalculController extends CoreController {
         if (!$userId) {
             die("Utilisateur non connecté");
         }
-    
+
         $rows = Calculs::getCalculsWithLibelle($userId);
-    
+
         $calculsDTO = [];
-    
+
         foreach ($rows as $row) {
             $calculsDTO[] = CalculDTO::fromArray($row);
         }
-    
+
         $this->show('calculs', [
             'calculs' => $calculsDTO
         ]);
     }
-    
-    public function ope() {
-        $this->show('calculateur');
-    }
-    
-    // supprime produit
-     public function delete($id)
-     {
-        $CalculToDelete = Calculs::find($id);
 
-        if ($CalculToDelete){
-            $CalculToDelete->delete();
+    public function savePost()
+    {
+        header('Content-Type: application/json; charset=utf-8');
 
-            header('Location: '. $this->router->generate('Calcul-index'));
+        $userId = $_SESSION['userId'] ?? null;
+
+        if (!$userId) {
+            http_response_code(401);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Utilisateur non connecté'
+            ]);
+            return;
         }
 
+        try {
+            $tarif = (float) ($_POST['Tarif'] ?? 0);
+            $indice0 = (float) ($_POST['ICHT-N0'] ?? 0);
+            $indiceN = (float) ($_POST['ICHT-Nn'] ?? 0);
+            $partFerme = (float) ($_POST['part_ferme'] ?? 0);
+
+            $calculator = new RevisionCalculator();
+            $result = $calculator->calculate(
+                $tarif,
+                $indice0,
+                $indiceN,
+                $partFerme
+            );
+
+            $calcul = new Calculs();
+
+            $calcul->setUserId((int) $userId);
+            $calcul->setReference(Calculs::generateReference());
+            $calcul->setTarifOrigin($tarif);
+            $calcul->setIndiceN0($indice0);
+            $calcul->setIndiceNn($indiceN);
+            $calcul->setCoefficient($result->getCoefficient());
+            $calcul->setNouveauTarif($result->getNouveauTarif());
+            $calcul->setLibelle((string) ($_POST['libelle'] ?? ''));
+            $calcul->setDate0($this->normalizeDate((string) ($_POST['date0'] ?? '')));
+            $calcul->setDateN($this->normalizeDate((string) ($_POST['dateN'] ?? '')));
+            $calcul->setPartFerme($partFerme);
+
+            if (!$calcul->insert()) {
+                throw new \RuntimeException('Erreur lors de l\'enregistrement du calcul');
+            }
+
+            echo json_encode([
+                'success' => true,
+                'Cn' => $result->getCoefficient(),
+                'nouveauTarif' => $result->getNouveauTarif(),
+                'reference' => $calcul->getReference()
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
+        } catch (\Throwable $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Erreur serveur : ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    private function normalizeDate(string $date): string
+    {
+        return preg_match('/^\d{4}-\d{2}$/', $date)
+            ? $date . '-01'
+            : $date;
+    }
+
+    public function ope()
+    {
+        $this->show('calculateur');
+    }
+
+    public function delete($id)
+    {
+        $CalculToDelete = Calculs::find($id);
+
+        if ($CalculToDelete) {
+            $CalculToDelete->delete();
+
+            header('Location: ' . $this->router->generate('Calcul-index'));
+        }
     }
 }
