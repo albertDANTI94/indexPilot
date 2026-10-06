@@ -324,21 +324,14 @@ class Calculs extends CoreModel
      */
     public static function find($calculId)
     {
-        // récupérer un objet PDO = connexion à la BDD
         $pdo = Database::getPDO();
 
-        // on écrit la requête SQL pour récupérer le produit
-        $sql = '
-            SELECT *
-            FROM calculs
-            WHERE id = ' . $calculId;
+        $sql = 'SELECT * FROM calculs WHERE id = :id';
 
+        $pdoStatement = $pdo->prepare($sql);
+        $pdoStatement->execute(['id' => $calculId]);
 
-        $pdoStatement = $pdo->query($sql);
-
-        $result = $pdoStatement->fetchObject('App\Models\Caluls');
-
-        return $result;
+        return $pdoStatement->fetchObject(self::class);
     }
 
     /**
@@ -463,4 +456,82 @@ class Calculs extends CoreModel
         // on execute la requête et on renvoit true ou false
         return $stmt->execute();
     }
+
+    public static function generateReference(): string
+    {
+        $pdo = Database::getPDO();
+        $year = date('Y');
+
+        $stmt = $pdo->prepare("
+            SELECT reference
+            FROM calculs
+            WHERE reference LIKE :pattern
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+
+        $stmt->execute([
+            'pattern' => "CAL-$year-%"
+        ]);
+
+        $last = $stmt->fetchColumn();
+
+        if (!$last) {
+            return "CAL-$year-0001";
+        }
+
+        $parts = explode('-', $last);
+        $num = (int) end($parts);
+
+        return "CAL-$year-" . str_pad($num + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    public function insert(): bool
+    {
+        $pdo = Database::getPDO();
+
+        $stmt = $pdo->prepare("
+            INSERT INTO calculs (
+                user_id,
+                reference,
+                tarif_origin,
+                indice_n0,
+                indice_nn,
+                coefficient,
+                nouveau_tarif,
+                libelle,
+                date0,
+                dateN,
+                part_ferme
+            )
+            VALUES (
+                :user_id,
+                :reference,
+                :tarif_origin,
+                :indice_n0,
+                :indice_nn,
+                :coefficient,
+                :nouveau_tarif,
+                :libelle,
+                :date0,
+                :dateN,
+                :part_ferme
+            )
+        ");
+
+        return $stmt->execute([
+            'user_id' => $this->user_id,
+            'reference' => $this->reference,
+            'tarif_origin' => $this->tarif_origin,
+            'indice_n0' => $this->indice_n0,
+            'indice_nn' => $this->indice_nn,
+            'coefficient' => $this->coefficient,
+            'nouveau_tarif' => $this->nouveau_tarif,
+            'libelle' => $this->libelle,
+            'date0' => $this->date0,
+            'dateN' => $this->dateN,
+            'part_ferme' => $this->part_ferme,
+        ]);
+    }
+
 }
