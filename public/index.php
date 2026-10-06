@@ -357,6 +357,17 @@ $router->map(
 );
 
 
+/* API — Enregistrer un calcul */
+$router->map(
+    'POST',
+    '/api/calculs',
+    [
+        'controller' => '\\App\\Controllers\\CalculController',
+        'method' => 'savePost'
+    ],
+    'Api-calculs-save'
+);
+
 /* API — Date maximale des indices */
 $router->map(
     'GET',
